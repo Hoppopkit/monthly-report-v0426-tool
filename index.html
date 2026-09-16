@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="月結報告 V0426 流動版：增刪月底少數值勤後下載可交 Excel">
+    <title>月結報告 V0426 流動版</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>月結報告 V0426</h1>
+            <p class="subtitle">流動版 · 月底增刪 1～2 筆值勤</p>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <div class="upload-box">
+                    <h2>1. 上傳電腦已匯出的 MR Form</h2>
+                    <p class="hint">請先用桌面程式「匯出月結報告0426」產生完整 xlsx，再上傳此處。</p>
+                    <input type="file" id="mrFile" accept=".xlsx" class="file-input">
+                    <label for="mrFile" class="file-label">
+                        <span id="mrFileName">選擇 .xlsx 檔案</span>
+                    </label>
+                    <div id="mrStatus" class="status-message"></div>
+                </div>
+            </section>
+
+            <section id="summarySection" class="summary-section" hidden>
+                <h2>檔案摘要</h2>
+                <div class="info-box">
+                    <p><strong>檔名：</strong><span id="sumFileName">—</span></p>
+                    <p><strong>值勤筆數：</strong><span id="sumDutyCount">0</span></p>
+                    <p><strong>DutyList 列數：</strong><span id="sumRowCount">0</span> / <span id="sumRowMax">277</span></p>
+                    <p><strong>NameList 人數：</strong><span id="sumMemberCount">0</span> / <span id="sumMemberMax">62</span></p>
+                </div>
+            </section>
+
+            <section id="editSection" class="edit-section" hidden>
+                <h2>2. 新增值勤</h2>
+                <div class="form-card">
+                    <label>日期 <input type="date" id="addDate"></label>
+                    <label>值勤名稱 <input type="text" id="addNature" placeholder="Duty Name"></label>
+                    <label>地點 <input type="text" id="addLocation" placeholder="Location"></label>
+                    <label>Duty Code
+                        <select id="addCode"></select>
+                    </label>
+                    <div class="members-block">
+                        <p class="members-title">隊員（編號；新人需填職級與英文名）</p>
+                        <div id="memberRows"></div>
+                        <button type="button" id="addMemberRowBtn" class="btn btn-secondary">＋ 加一名隊員</button>
+                    </div>
+                    <button type="button" id="addDutyBtn" class="btn btn-primary">加入此值勤</button>
+                    <div id="addStatus" class="status-message"></div>
+                </div>
+
+                <h2>3. 刪除值勤</h2>
+                <div class="form-card">
+                    <p class="hint">勾選要刪除的值勤（建議一次不超過 2 筆）。</p>
+                    <div id="dutyChecklist" class="duty-checklist"></div>
+                    <button type="button" id="deleteDutyBtn" class="btn btn-danger">刪除勾選的值勤</button>
+                    <div id="deleteStatus" class="status-message"></div>
+                </div>
+            </section>
+
+            <section id="actionSection" class="action-section" hidden>
+                <h2>4. 下載</h2>
+                <button type="button" id="downloadBtn" class="btn btn-primary btn-large">下載修改後的 MR Form</button>
+                <div id="downloadStatus" class="status-message"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>僅修改 DutyList / NameList；MR2 公式保留。資料只在本機瀏覽器處理。</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="constants.js"></script>
+    <script src="dutylist.js"></script>
+    <script src="namelist.js"></script>
+    <script src="excel-io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
