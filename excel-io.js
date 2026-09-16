@@ -105,7 +105,119 @@ async function injectDefinedNamesXml(xlsxBuffer, definedNamesXml) {
 }
 
 /**
- * @returns {{ workbook, duties, nameList, sourceFileName, definedNamesXml }}
+ * ExcelJS 重寫會弄壞「操作指引」等未改動的工作表（無效 DPI 等），
+ * 導致 Excel 開檔要求修復。下載前用原檔對應工作表蓋回去。
+ * 不還原 DutyList / NameList（這兩張才是我們改的）。
+ * 不還原 MR2：其共用字串索引依賴 ExcelJS 重寫後的 sharedStrings。
+ */
+async function restoreUntouchedSheetsFromOriginal(outputBuffer, originalBuffer) {
+    if (!originalBuffer || typeof JSZip === 'undefined') return outputBuffer;
+
+    const outZip = await JSZip.loadAsync(outputBuffer);
+    const origZip = await JSZip.loadAsync(originalBuffer);
+
+    const outMap = await mapSheetNameToPath(outZip);
+    const origMap = await mapSheetNameToPath(origZip);
+
+    let restored = 0;
+
+    for (const [name, outPath] of Object.entries(outMap)) {
+        const key = name.trim();
+        if (key === DUTYLIST_SHEET || key === NAMELIST_SHEET) continue;
+        if (key === 'MR2') continue;
+        // 只還原「操作指引」（Excel 修復紀錄指出 sheet4 損壞）
+        if (!key.includes('操作')) continue;
+        const origPath = findSheetPathByTrimmedName(origMap, key);
+        if (!origPath) continue;
+        const origFile = origZip.file(origPath);
+        if (!origFile) continue;
+        outZip.file(outPath, await origFile.async('uint8array'));
+
+        const outRels = sheetRelsPath(outPath);
+        const origRels = sheetRelsPath(origPath);
+        const origRelsFile = origZip.file(origRels);
+        if (origRelsFile) {
+            outZip.file(outRels, await origRelsFile.async('uint8array'));
+        } else if (outZip.file(outRels)) {
+            outZip.remove(outRels);
+        }
+        restored += 1;
+    }
+
+    if (!restored) {
+        // 後備：若工作表名稱對不上，仍嘗試還原 sheet4（範本固定第 4 張為操作指引）
+        const fallback = 'xl/worksheets/sheet4.xml';
+        if (origZip.file(fallback) && outZip.file(fallback)) {
+            outZip.file(fallback, await origZip.file(fallback).async('uint8array'));
+            const rels = sheetRelsPath(fallback);
+            if (origZip.file(rels)) {
+                outZip.file(rels, await origZip.file(rels).async('uint8array'));
+            }
+            restored = 1;
+        }
+    }
+
+    if (!restored) return outputBuffer;
+    return outZip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+}
+
+function sheetRelsPath(sheetPath) {
+    // xl/worksheets/sheet4.xml -> xl/worksheets/_rels/sheet4.xml.rels
+    const parts = sheetPath.split('/');
+    const file = parts.pop();
+    return `${parts.join('/')}/_rels/${file}.rels`;
+}
+
+function findSheetPathByTrimmedName(nameToPath, trimmedName) {
+    for (const [name, path] of Object.entries(nameToPath)) {
+        if (name.trim() === trimmedName) return path;
+    }
+    return null;
+}
+
+/** @returns {Promise<Record<string, string>>} sheetName -> zip path */
+async function mapSheetNameToPath(zip) {
+    const wbFile = zip.file('xl/workbook.xml');
+    const relsFile = zip.file('xl/_rels/workbook.xml.rels');
+    if (!wbFile || !relsFile) return {};
+    const wbXml = await wbFile.async('string');
+    const relsXml = await relsFile.async('string');
+
+    const ridToTarget = {};
+    const relRe = /<Relationship\b[^>]*>/g;
+    let rm;
+    while ((rm = relRe.exec(relsXml)) !== null) {
+        const tag = rm[0];
+        const id = (tag.match(/\bId="([^"]+)"/) || [])[1];
+        const target = (tag.match(/\bTarget="([^"]+)"/) || [])[1];
+        const type = (tag.match(/\bType="([^"]+)"/) || [])[1] || '';
+        if (id && target && type.includes('worksheet')) {
+            let path = target.replace(/\\/g, '/');
+            if (path.startsWith('/xl/')) path = path.slice(1);
+            else if (path.startsWith('xl/')) { /* ok */ }
+            else if (path.startsWith('/')) path = `xl${path}`;
+            else if (path.startsWith('worksheets/')) path = `xl/${path}`;
+            else path = `xl/worksheets/${path.split('/').pop()}`;
+            ridToTarget[id] = path;
+        }
+    }
+
+    const map = {};
+    const sheetRe = /<sheet\b[^>]*>/g;
+    let sm;
+    while ((sm = sheetRe.exec(wbXml)) !== null) {
+        const tag = sm[0];
+        const name = (tag.match(/\bname="([^"]*)"/) || [])[1];
+        const rid = (tag.match(/\br:id="([^"]+)"/) || tag.match(/\bId="([^"]+)"/) || [])[1];
+        if (name && rid && ridToTarget[rid]) {
+            map[name] = ridToTarget[rid];
+        }
+    }
+    return map;
+}
+
+/**
+ * @returns {{ workbook, duties, nameList, sourceFileName, definedNamesXml, originalArrayBuffer }}
  */
 async function loadMrFormFromFile(file) {
     const buf = await file.arrayBuffer();
@@ -167,6 +279,7 @@ async function loadMrFormFromFile(file) {
         nameList: sortNameListMembers(nameList),
         sourceFileName: file.name,
         definedNamesXml,
+        originalArrayBuffer: buf,
     };
 }
 
@@ -239,9 +352,10 @@ function writeDutyAndNameSheets(workbook, duties, nameList) {
     };
 }
 
-async function downloadWorkbook(workbook, filename, definedNamesXml) {
+async function downloadWorkbook(workbook, filename, definedNamesXml, originalArrayBuffer) {
     let buffer = await workbook.xlsx.writeBuffer();
     buffer = await injectDefinedNamesXml(buffer, definedNamesXml);
+    buffer = await restoreUntouchedSheetsFromOriginal(buffer, originalArrayBuffer);
     const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

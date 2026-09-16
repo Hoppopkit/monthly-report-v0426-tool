@@ -8,6 +8,7 @@ let state = {
     nameList: [],
     sourceFileName: '',
     definedNamesXml: null,
+    originalArrayBuffer: null,
 };
 
 const mrFileInput = document.getElementById('mrFile');
@@ -164,6 +165,7 @@ async function handleFile(event) {
         state.nameList = loaded.nameList;
         state.sourceFileName = loaded.sourceFileName;
         state.definedNamesXml = loaded.definedNamesXml;
+        state.originalArrayBuffer = loaded.originalArrayBuffer;
         const nameHint = loaded.definedNamesXml
             ? '（已保留命名範圍）'
             : '（警告：未找到命名範圍，MR2 可能異常）';
@@ -181,6 +183,7 @@ async function handleFile(event) {
         setStatus(mrStatus, `✗ ${err.message}`, 'error');
         state.workbook = null;
         state.definedNamesXml = null;
+        state.originalArrayBuffer = null;
         summarySection.hidden = true;
         editSection.hidden = true;
         actionSection.hidden = true;
@@ -271,7 +274,12 @@ async function handleDownload() {
         if (!state.workbook) throw new Error('請先上傳 MR Form');
         const stats = writeDutyAndNameSheets(state.workbook, state.duties, state.nameList);
         const name = editedFileName(state.sourceFileName);
-        await downloadWorkbook(state.workbook, name, state.definedNamesXml);
+        await downloadWorkbook(
+            state.workbook,
+            name,
+            state.definedNamesXml,
+            state.originalArrayBuffer
+        );
         setStatus(
             document.getElementById('downloadStatus'),
             `✓ 已下載 ${name}（DutyList ${stats.dutyRowCount} 列，NameList ${stats.memberCount} 人）`,
