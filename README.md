@@ -21,7 +21,7 @@
 1. 用 Safari／Chrome 開啟上述網址（可「加入主畫面」）
 2. 上傳 xlsx → 增刪 → 下載；檔案在 **檔案 → 下載項目**
 
-> 需能連線載入 ExcelJS CDN（`cdn.jsdelivr.net`）。
+> 需能連線載入 ExcelJS／JSZip CDN（`cdn.jsdelivr.net`）。
 
 **維護者：** 倉庫 https://github.com/Hoppopkit/monthly-report-v0426-tool — Pages 來源為 `main` 分支根目錄。
 

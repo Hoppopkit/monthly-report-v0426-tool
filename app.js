@@ -7,6 +7,7 @@ let state = {
     duties: [],
     nameList: [],
     sourceFileName: '',
+    definedNamesXml: null,
 };
 
 const mrFileInput = document.getElementById('mrFile');
@@ -110,20 +111,31 @@ function refreshDutyChecklist() {
         return;
     }
     for (const d of sorted) {
-        const label = document.createElement('label');
-        label.className = 'duty-item';
+        const item = document.createElement('div');
+        item.className = 'duty-item';
         const dateStr = formatLocalDate(d.date) || '（無日期）';
         const mem = (d.members || []).filter(Boolean).join(', ') || '（無隊員）';
-        label.innerHTML = `
-            <input type="checkbox" value="${d.id}">
-            <div>
-                <div><strong>${cellText(d.code) || '—'}</strong> · ${dateStr}</div>
-                <div>${cellText(d.nature) || '（無名稱）'}</div>
-                <div class="meta">${cellText(d.location)} · ${mem}</div>
-            </div>
+        const code = cellText(d.code) || '—';
+        const nature = cellText(d.nature) || '（無名稱）';
+        const location = cellText(d.location);
+        item.innerHTML = `
+            <input type="checkbox" class="duty-check" value="${d.id}" id="chk-${d.id}">
+            <label class="duty-body" for="chk-${d.id}">
+                <div class="duty-line1"><strong>${escapeHtml(code)}</strong> · ${escapeHtml(dateStr)}</div>
+                <div class="duty-line2">${escapeHtml(nature)}</div>
+                <div class="meta">${escapeHtml(location)}${location ? ' · ' : ''}${escapeHtml(mem)}</div>
+            </label>
         `;
-        box.appendChild(label);
+        box.appendChild(item);
     }
+}
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 function showEditor() {
@@ -143,15 +155,22 @@ async function handleFile(event) {
         if (typeof ExcelJS === 'undefined') {
             throw new Error('ExcelJS 未載入，請確認網路可存取 CDN');
         }
+        if (typeof JSZip === 'undefined') {
+            throw new Error('JSZip 未載入，請確認網路可存取 CDN');
+        }
         const loaded = await loadMrFormFromFile(file);
         state.workbook = loaded.workbook;
         state.duties = loaded.duties;
         state.nameList = loaded.nameList;
         state.sourceFileName = loaded.sourceFileName;
+        state.definedNamesXml = loaded.definedNamesXml;
+        const nameHint = loaded.definedNamesXml
+            ? '（已保留命名範圍）'
+            : '（警告：未找到命名範圍，MR2 可能異常）';
         setStatus(
             mrStatus,
-            `✓ 已載入：${state.duties.length} 筆值勤，NameList ${state.nameList.length} 人`,
-            'success'
+            `✓ 已載入：${state.duties.length} 筆值勤，NameList ${state.nameList.length} 人${nameHint}`,
+            loaded.definedNamesXml ? 'success' : 'error'
         );
         memberRowsEl.innerHTML = '';
         createMemberRow();
@@ -161,6 +180,7 @@ async function handleFile(event) {
         console.error(err);
         setStatus(mrStatus, `✗ ${err.message}`, 'error');
         state.workbook = null;
+        state.definedNamesXml = null;
         summarySection.hidden = true;
         editSection.hidden = true;
         actionSection.hidden = true;
@@ -223,7 +243,7 @@ function handleAddDuty() {
 function handleDeleteDuties() {
     setStatus(document.getElementById('deleteStatus'), '', '');
     try {
-        const checked = [...document.querySelectorAll('#dutyChecklist input[type=checkbox]:checked')]
+        const checked = [...document.querySelectorAll('#dutyChecklist input.duty-check:checked')]
             .map((el) => el.value);
         if (!checked.length) throw new Error('請先勾選要刪除的值勤');
         if (checked.length > 2) {
@@ -251,7 +271,7 @@ async function handleDownload() {
         if (!state.workbook) throw new Error('請先上傳 MR Form');
         const stats = writeDutyAndNameSheets(state.workbook, state.duties, state.nameList);
         const name = editedFileName(state.sourceFileName);
-        await downloadWorkbook(state.workbook, name);
+        await downloadWorkbook(state.workbook, name, state.definedNamesXml);
         setStatus(
             document.getElementById('downloadStatus'),
             `✓ 已下載 ${name}（DutyList ${stats.dutyRowCount} 列，NameList ${stats.memberCount} 人）`,

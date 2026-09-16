@@ -1,6 +1,7 @@
 /**
- * Excel 讀寫：只改 DutyList / NameList 儲存格值，其餘工作表原樣保留
- * 依賴全域 ExcelJS（CDN）
+ * Excel 讀寫：只改 DutyList / NameList 儲存格值
+ * 用 JSZip 把原檔的 definedNames（整欄命名範圍）寫回，避免 ExcelJS 丟棄後 MR2 壞掉
+ * 依賴全域 ExcelJS、JSZip（CDN）
  */
 
 function getCellValue(sheet, row, col) {
@@ -10,7 +11,6 @@ function getCellValue(sheet, row, col) {
 
 function setCellValue(sheet, row, col, value) {
     const cell = sheet.getCell(row, col);
-    // 保留既有數字格式；只改 value
     if (value === null || value === undefined || value === '') {
         cell.value = null;
     } else {
@@ -18,11 +18,62 @@ function setCellValue(sheet, row, col, value) {
     }
 }
 
+/** 本地日 → Excel 序列日（無時區偏移） */
+function dateToExcelSerial(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    const utc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+    const epoch = Date.UTC(1899, 11, 30);
+    return Math.round((utc - epoch) / 86400000);
+}
+
 /**
- * @returns {{ workbook, duties, nameList, sourceFileName }}
+ * 從原始 xlsx 抽出 <definedNames>...</definedNames>
+ * ExcelJS 無法保留 DutyList!$B:$B 這類整欄名稱
+ */
+async function extractDefinedNamesXml(arrayBuffer) {
+    if (typeof JSZip === 'undefined') return null;
+    try {
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const entry = zip.file('xl/workbook.xml');
+        if (!entry) return null;
+        const wbXml = await entry.async('string');
+        const match = wbXml.match(/<definedNames[\s\S]*?<\/definedNames>/);
+        return match ? match[0] : null;
+    } catch (err) {
+        console.warn('extractDefinedNamesXml failed', err);
+        return null;
+    }
+}
+
+/**
+ * 把 definedNames 注入 ExcelJS 寫出的 buffer
+ */
+async function injectDefinedNamesXml(xlsxBuffer, definedNamesXml) {
+    if (!definedNamesXml || typeof JSZip === 'undefined') return xlsxBuffer;
+    const zip = await JSZip.loadAsync(xlsxBuffer);
+    const entry = zip.file('xl/workbook.xml');
+    if (!entry) return xlsxBuffer;
+    let wbXml = await entry.async('string');
+    wbXml = wbXml.replace(/<definedNames[\s\S]*?<\/definedNames>/g, '');
+    if (wbXml.includes('</workbook>')) {
+        wbXml = wbXml.replace('</workbook>', `${definedNamesXml}</workbook>`);
+    } else {
+        return xlsxBuffer;
+    }
+    zip.file('xl/workbook.xml', wbXml);
+    return zip.generateAsync({
+        type: 'arraybuffer',
+        compression: 'DEFLATE',
+    });
+}
+
+/**
+ * @returns {{ workbook, duties, nameList, sourceFileName, definedNamesXml }}
  */
 async function loadMrFormFromFile(file) {
     const buf = await file.arrayBuffer();
+    const definedNamesXml = await extractDefinedNamesXml(buf);
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buf);
 
@@ -78,6 +129,7 @@ async function loadMrFormFromFile(file) {
         duties,
         nameList: sortNameListMembers(nameList),
         sourceFileName: file.name,
+        definedNamesXml,
     };
 }
 
@@ -100,7 +152,6 @@ function writeDutyAndNameSheets(workbook, duties, nameList) {
         );
     }
 
-    // 清空 DutyList 資料區 B–J
     for (let r = DUTYLIST_DATA_START; r <= DUTYLIST_DATA_END; r++) {
         for (let c = COL.DATE; c <= COL.DH_MEAL; c++) {
             setCellValue(dutySheet, r, c, null);
@@ -109,7 +160,16 @@ function writeDutyAndNameSheets(workbook, duties, nameList) {
 
     let row = DUTYLIST_DATA_START;
     for (const item of rows) {
-        setCellValue(dutySheet, row, COL.DATE, item.date || null);
+        const serial = item.date ? dateToExcelSerial(item.date) : null;
+        const dateCell = dutySheet.getCell(row, COL.DATE);
+        if (serial != null) {
+            dateCell.value = serial;
+            if (!dateCell.numFmt || dateCell.numFmt === 'General') {
+                dateCell.numFmt = 'dd-mmm-yy';
+            }
+        } else {
+            dateCell.value = null;
+        }
         setCellValue(dutySheet, row, COL.NATURE, item.nature || null);
         setCellValue(dutySheet, row, COL.LOCATION, item.location || null);
         setCellValue(dutySheet, row, COL.CODE, item.code || null);
@@ -121,7 +181,6 @@ function writeDutyAndNameSheets(workbook, duties, nameList) {
         row += 1;
     }
 
-    // 清空 NameList A–C（保留 C1 分會名稱）
     for (let r = NAMELIST_DATA_START; r <= NAMELIST_DATA_END; r++) {
         for (let c = 1; c <= 3; c++) {
             setCellValue(nameSheet, r, c, null);
@@ -143,8 +202,9 @@ function writeDutyAndNameSheets(workbook, duties, nameList) {
     };
 }
 
-async function downloadWorkbook(workbook, filename) {
-    const buffer = await workbook.xlsx.writeBuffer();
+async function downloadWorkbook(workbook, filename, definedNamesXml) {
+    let buffer = await workbook.xlsx.writeBuffer();
+    buffer = await injectDefinedNamesXml(buffer, definedNamesXml);
     const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

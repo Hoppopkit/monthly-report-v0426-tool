@@ -214,30 +214,58 @@ label select {
 }
 
 .duty-checklist {
-    max-height: 280px;
+    max-height: 320px;
     overflow-y: auto;
     margin-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .duty-item {
     display: flex;
-    gap: 10px;
+    flex-direction: row;
     align-items: flex-start;
-    padding: 10px;
-    margin-bottom: 6px;
+    gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    margin-bottom: 8px;
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
-    font-size: 0.88rem;
+    font-size: 0.9rem;
 }
 
-.duty-item input {
-    margin-top: 3px;
+.duty-item .duty-check {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    margin: 2px 0 0;
+    accent-color: #2d6a9f;
+}
+
+.duty-item .duty-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    display: block;
+    line-height: 1.45;
+    color: #1e293b;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.duty-item .duty-line1 {
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+.duty-item .duty-line2 {
+    margin-bottom: 4px;
 }
 
 .duty-item .meta {
     color: #64748b;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
 }
 
 footer {
