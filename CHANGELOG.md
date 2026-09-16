@@ -1,5 +1,12 @@
 # 變更日誌
 
+## 1.0.2 (2026-09-16)
+
+### 修正
+
+- **檔案損壞**：注入命名範圍時過濾含 `[1]` 的外部活頁簿參照（ExcelJS 不會保留 externalLinks，貼回去會讓 Excel 判定 corrupt）
+- **workbook.xml 順序**：`definedNames` 改插在 `calcPr` 之前，符合 OOXML／Excel 預期
+
 ## 1.0.1 (2026-09-16)
 
 ### 修正

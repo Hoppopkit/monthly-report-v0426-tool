@@ -27,8 +27,9 @@ function dateToExcelSerial(date) {
 }
 
 /**
- * 從原始 xlsx 抽出 <definedNames>...</definedNames>
- * ExcelJS 無法保留 DutyList!$B:$B 這類整欄名稱
+ * 從原始 xlsx 抽出並清理 <definedNames>
+ * - 丟掉含 [1] 等外部活頁簿參照（ExcelJS 不會保留 externalLinks，貼回去會讓檔案損壞）
+ * - 只保留本檔可用的命名範圍（MR2 需要的 DutyList_* / NameList_* 等）
  */
 async function extractDefinedNamesXml(arrayBuffer) {
     if (typeof JSZip === 'undefined') return null;
@@ -38,7 +39,8 @@ async function extractDefinedNamesXml(arrayBuffer) {
         if (!entry) return null;
         const wbXml = await entry.async('string');
         const match = wbXml.match(/<definedNames[\s\S]*?<\/definedNames>/);
-        return match ? match[0] : null;
+        if (!match) return null;
+        return sanitizeDefinedNamesXml(match[0]);
     } catch (err) {
         console.warn('extractDefinedNamesXml failed', err);
         return null;
@@ -46,20 +48,55 @@ async function extractDefinedNamesXml(arrayBuffer) {
 }
 
 /**
+ * 過濾會導致 Excel 判定 corrupt 的 definedName
+ */
+function sanitizeDefinedNamesXml(definedNamesXml) {
+    if (!definedNamesXml) return null;
+    const parts = [];
+    const re = /<definedName\b[^>]*>[\s\S]*?<\/definedName>/g;
+    let m;
+    while ((m = re.exec(definedNamesXml)) !== null) {
+        const tag = m[0];
+        // 外部活頁簿參照：[1]Sheet!$A:$A
+        if (/\[\d+\]/.test(tag)) continue;
+        parts.push(tag);
+    }
+    if (!parts.length) return null;
+    return `<definedNames>${parts.join('')}</definedNames>`;
+}
+
+/**
+ * 把 definedNames 插入 workbook.xml 正確位置（calcPr 之前）
+ */
+function insertDefinedNamesIntoWorkbookXml(wbXml, definedNamesXml) {
+    let xml = wbXml.replace(/<definedNames[\s\S]*?<\/definedNames>/g, '');
+    if (!definedNamesXml) return xml;
+
+    if (/<calcPr[\s\S]*?\/>/.test(xml)) {
+        return xml.replace(/<calcPr[\s\S]*?\/>/, `${definedNamesXml}$&`);
+    }
+    if (/<calcPr[\s\S]*?<\/calcPr>/.test(xml)) {
+        return xml.replace(/<calcPr[\s\S]*?<\/calcPr>/, `${definedNamesXml}$&`);
+    }
+    if (xml.includes('</workbook>')) {
+        return xml.replace('</workbook>', `${definedNamesXml}</workbook>`);
+    }
+    return xml;
+}
+
+/**
  * 把 definedNames 注入 ExcelJS 寫出的 buffer
  */
 async function injectDefinedNamesXml(xlsxBuffer, definedNamesXml) {
     if (!definedNamesXml || typeof JSZip === 'undefined') return xlsxBuffer;
+    const clean = sanitizeDefinedNamesXml(definedNamesXml);
+    if (!clean) return xlsxBuffer;
+
     const zip = await JSZip.loadAsync(xlsxBuffer);
     const entry = zip.file('xl/workbook.xml');
     if (!entry) return xlsxBuffer;
     let wbXml = await entry.async('string');
-    wbXml = wbXml.replace(/<definedNames[\s\S]*?<\/definedNames>/g, '');
-    if (wbXml.includes('</workbook>')) {
-        wbXml = wbXml.replace('</workbook>', `${definedNamesXml}</workbook>`);
-    } else {
-        return xlsxBuffer;
-    }
+    wbXml = insertDefinedNamesIntoWorkbookXml(wbXml, clean);
     zip.file('xl/workbook.xml', wbXml);
     return zip.generateAsync({
         type: 'arraybuffer',
