@@ -25,6 +25,30 @@
 
 **維護者：** 倉庫 https://github.com/Hoppopkit/monthly-report-v0426-tool — Pages 來源為 `main` 分支根目錄。
 
+#### 首次部署到 GitHub Pages（做法二：獨立 repo）
+
+本資料夾已是獨立 git 倉庫。在終端機執行：
+
+```bash
+# 若尚未登入 GitHub（只需做一次）
+gh auth login
+
+cd /Users/macbookair/Documents/Python/monthly-report-v0426-tool
+./publish_github_pages.sh
+```
+
+腳本會：建立 `Hoppopkit/monthly-report-v0426-tool` 公開倉庫 → push → 啟用 Pages。  
+約 1–3 分鐘後開啟：https://hoppopkit.github.io/monthly-report-v0426-tool/
+
+**若沒有 `gh`：** `brew install gh` 後再執行上述步驟。
+
+**手動方式（不用腳本）：**
+
+1. 在 GitHub 新建 public 倉庫 `monthly-report-v0426-tool`（不要勾選 README）
+2. `git remote add origin https://github.com/Hoppopkit/monthly-report-v0426-tool.git`
+3. `git push -u origin main`
+4. 倉庫 **Settings → Pages** → Branch `main`、Folder `/ (root)` → Save
+
 ### 方式 B：本機簡易伺服器
 
 ```bash
