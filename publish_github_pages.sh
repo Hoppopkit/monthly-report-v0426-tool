@@ -43,13 +43,14 @@ else
 fi
 
 echo "啟用 GitHub Pages（main / root）…"
-"$GH" api --method PUT "repos/${OWNER}/${REPO_NAME}/pages" \
-  -f "build_type=legacy" \
-  -f "source[branch]=main" \
-  -f "source[path]=/" \
-  2>/dev/null || "$GH" api --method PUT "repos/${OWNER}/${REPO_NAME}/pages" \
-  -f "source[branch]=main" \
-  -f "source[path]=/"
+PAGES_JSON='{"source":{"branch":"main","path":"/"}}'
+if "$GH" api "repos/${OWNER}/${REPO_NAME}/pages" >/dev/null 2>&1; then
+  echo "Pages 已存在，更新設定…"
+  "$GH" api --method PUT "repos/${OWNER}/${REPO_NAME}/pages" --input - <<<"$PAGES_JSON"
+else
+  echo "建立 Pages 站點…"
+  "$GH" api --method POST "repos/${OWNER}/${REPO_NAME}/pages" --input - <<<"$PAGES_JSON"
+fi
 
 echo ""
 echo "完成！約 1–3 分鐘後可開啟："
